@@ -9,7 +9,7 @@
 #include <QTableWidget>
 #include <random>
 
-#define DEFAULTCFG "{\"count\":2,\"t\":100,\"nameList\":[{\"id\":1,\"name\":\"学生1\",\"w\":10},{\"id\":2,\"name\":\"学生2\",\"w\":10}]}"
+#define DEFAULTCFG "{\"t\":100,\"nameList\":[{\"id\":1,\"name\":\"学生1\",\"w\":10},{\"id\":2,\"name\":\"学生2\",\"w\":10}]}"
 
 using namespace sonic_json;
 
@@ -42,16 +42,6 @@ bool LuckyDog::loadConfig()
             return loadConfig();
         }
 
-        if (!doc.HasMember("count")) {
-            QMessageBox::warning(
-                this, 
-                "异常", 
-                "加载配置文件异常：不存在count。\n将使用默认配置文件。");
-            saveFile("config.json.bak", cfgText);
-            saveFile("config.json", DEFAULTCFG);
-            return loadConfig();
-        }
-
         if (!doc.HasMember("t")) {
             QMessageBox::warning(
                 this, 
@@ -64,10 +54,7 @@ bool LuckyDog::loadConfig()
 
         time = doc.FindMember("t")->value.GetInt64();
         ui->doubleSpinBox->setValue(float(time) / 1000);
-
-        int c = doc.FindMember("count")->value.GetInt64();
-        nameList.resize(c);
-        ui->tableWidget->setRowCount(c);
+        
         ui->tableWidget->setHorizontalHeaderLabels({"学号", "姓名", "权重"});
         for (int i = 0; doc.AtPointer("nameList", i) != nullptr; i++) {
             if (!(
@@ -83,12 +70,15 @@ bool LuckyDog::loadConfig()
                 saveFile("config.json", DEFAULTCFG);
                 return loadConfig();
             }
-            nameList[i].id = doc.AtPointer("nameList", i, "id")->GetInt64();
-            nameList[i].name = doc.AtPointer("nameList", i, "name")->GetString();
-            nameList[i].w = doc.AtPointer("nameList", i, "w")->GetInt64();
-            ui->tableWidget->setItem(i, 0, new QTableWidgetItem(QString(to_string(nameList[i].id).c_str())));
-            ui->tableWidget->setItem(i, 1, new QTableWidgetItem(QString(nameList[i].name.c_str())));
-            ui->tableWidget->setItem(i, 2, new QTableWidgetItem(QString(to_string(nameList[i].w).c_str())));
+            Student stu;
+            stu.id = doc.AtPointer("nameList", i, "id")->GetInt64();
+            stu.name = doc.AtPointer("nameList", i, "name")->GetString();
+            stu.w = doc.AtPointer("nameList", i, "w")->GetInt64();
+            ui->tableWidget->setRowCount(i + 1);
+            ui->tableWidget->setItem(i, 0, new QTableWidgetItem(QString(to_string(stu.id).c_str())));
+            ui->tableWidget->setItem(i, 1, new QTableWidgetItem(QString(stu.name.c_str())));
+            ui->tableWidget->setItem(i, 2, new QTableWidgetItem(QString(to_string(stu.w).c_str())));
+            nameList.push_back(stu);
         }
         return true;
     }
@@ -193,8 +183,7 @@ void LuckyDog::onConfigStu()
     auto& alloc = doc.GetAllocator();
     doc.Parse(cfgTxt);
     int c = ui->tableWidget->rowCount();
-    int c2 = doc.FindMember("count")->value.GetInt64();
-    int dc = c - c2;
+    int dc = c - nameList.size();
     if (dc < 0) {
         for (int i = 0; i < -dc; i++) {
             doc.AtPointer("nameList")->PopBack();
@@ -216,7 +205,6 @@ void LuckyDog::onConfigStu()
         doc.AtPointer("nameList", i, "name")->SetString(nameList[i].name);
         doc.AtPointer("nameList", i, "w")->SetInt64(nameList[i].w);
     }
-    doc.FindMember("count")->value.SetInt64(c);
     WriteBuffer wb;
     doc.Serialize(wb);
     saveFile("config.json.bak", cfgTxt);
