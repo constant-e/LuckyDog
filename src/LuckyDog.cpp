@@ -69,11 +69,11 @@ bool LuckyDog::loadConfig()
         nameList.resize(c);
         ui->tableWidget->setRowCount(c);
         ui->tableWidget->setHorizontalHeaderLabels({"学号", "姓名", "权重"});
-        for (int i = 0; i < c; i++) {
+        for (int i = 0; doc.AtPointer("nameList", i) != nullptr; i++) {
             if (!(
-            doc.AtPointer("nameList", i)->HasMember("id") &&
-            doc.AtPointer("nameList", i)->HasMember("name") &&
-            doc.AtPointer("nameList", i)->HasMember("w")
+                doc.AtPointer("nameList", i)->HasMember("id") &&
+                doc.AtPointer("nameList", i)->HasMember("name") &&
+                doc.AtPointer("nameList", i)->HasMember("w")
             )) {
                 QMessageBox::warning(
                 this, 
@@ -122,11 +122,18 @@ void LuckyDog::onClickCBtn()
 void LuckyDog::onClickCBtn2()
 {
     int id;
-    int l = nameList.size();
     int s = 0; // 总权重
-    for (int i = 0; i < l; i++) {
-        s += nameList[i].w;
+    vector<Student> realNameList; // 去除无效数据后的学生名单
+
+    for (int i = 0; i < nameList.size(); i++) {
+        if (nameList[i].w > 0) {
+            realNameList.push_back(nameList[i]);
+            s += nameList[i].w;
+        }
     }
+
+    int l = realNameList.size();
+    
 
     random_device seed;
 	ranlux48 engine(seed());
@@ -138,13 +145,13 @@ void LuckyDog::onClickCBtn2()
             id = i;
             break;
         }
-        r -= nameList[i].w;
+        r -= realNameList[i].w;
     }
 
     string txt = "# 结果：\n# ";
-    txt.append(to_string(nameList[id - 1].id));
+    txt.append(to_string(realNameList[id - 1].id));
     txt.append("号 ");
-    txt.append(nameList[id - 1].name);
+    txt.append(realNameList[id - 1].name);
 
     ui->label->setText(QString(txt.c_str()));
 }
