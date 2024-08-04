@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(LuckyDog VERSION 1.0.0 LANGUAGES CXX)
+project(LuckyDog VERSION 1.0.1 LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
