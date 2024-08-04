@@ -1,0 +1,7 @@
+<!DOCTYPE RCC>
+<RCC>
+    <qresource>
+        <file>pic/icon.ico</file>
+        <file>text/about.md</file>
+    </qresource>
+</RCC>
