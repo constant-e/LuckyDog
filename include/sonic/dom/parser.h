@@ -18,21 +18,41 @@
 
 #include <climits>
 #include <cstring>
+#include <type_traits>
 #include <vector>
 
 #include "sonic/dom/flags.h"
 #include "sonic/dom/handler.h"
 #include "sonic/dom/json_pointer.h"
+#include "sonic/dom/schema_handler.h"
 #include "sonic/error.h"
+#include "sonic/internal/arch/simd_quote.h"
+#include "sonic/internal/arch/simd_skip.h"
+#include "sonic/internal/arch/simd_str2int.h"
 #include "sonic/internal/atof_native.h"
-#include "sonic/internal/haswell.h"
 #include "sonic/internal/parse_number_normal_fast.h"
-#include "sonic/internal/simd_str2int.h"
-#include "sonic/internal/skip.h"
-#include "sonic/internal/unicode.h"
+#include "sonic/internal/utils.h"
 #include "sonic/writebuffer.h"
 
 namespace sonic_json {
+
+// GetOnDemand get the target raw json fields of the json pointer.
+// The default JPStringType is
+// std::string(SONIC_JSON_POINTER_NODE_STRING_DEFAULT_TYPE).
+template <typename JPStringType = SONIC_JSON_POINTER_NODE_STRING_DEFAULT_TYPE>
+ParseResult GetOnDemand(StringView json,
+                        const GenericJsonPointer<JPStringType> &path,
+                        StringView &target) {
+  internal::SkipScanner scan;
+  size_t pos = 0;
+  long start = scan.GetOnDemand(json, pos, path);
+  if (start < 0) {
+    target = "";  // clear the exist target
+    return ParseResult(SonicError(-start), pos);
+  }
+  target = StringView(json.data() + start, pos - start);
+  return ParseResult(kErrorNone, pos);
+}
 
 class Parser {
  public:
@@ -76,47 +96,55 @@ class Parser {
   sonic_force_inline void setParseError(SonicError err) { err_ = err; }
 
   template <typename SAX>
-  sonic_force_inline void parseNull(SAX &sax) {
+  sonic_force_inline bool parseNull(SAX &sax) {
     const static uint32_t kNullBin = 0x6c6c756e;
-    if (internal::EqBytes4(json_buf_ + pos_ - 1, kNullBin) && sax.Null()) {
+    if (internal::EqBytes4(json_buf_ + pos_ - 1, kNullBin)) {
       pos_ += 3;
-      return;
+      return sax.Null();
     }
     setParseError(kParseErrorInvalidChar);
+    return false;
   }
 
   template <typename SAX>
-  sonic_force_inline void parseFalse(SAX &sax) {
+  sonic_force_inline bool parseFalse(SAX &sax) {
     const static uint32_t kFalseBin =
         0x65736c61;  // the binary of 'alse' in false
-    if (internal::EqBytes4(json_buf_ + pos_, kFalseBin) && sax.Bool(false)) {
+    if (internal::EqBytes4(json_buf_ + pos_, kFalseBin)) {
       pos_ += 4;
-      return;
+      return sax.Bool(false);
     }
     setParseError(kParseErrorInvalidChar);
+    return false;
   }
 
   template <typename SAX>
-  sonic_force_inline void parseTrue(SAX &sax) {
+  sonic_force_inline bool parseTrue(SAX &sax) {
     constexpr static uint32_t kTrueBin = 0x65757274;
-    if (internal::EqBytes4(json_buf_ + pos_ - 1, kTrueBin) && sax.Bool(true)) {
+    if (internal::EqBytes4(json_buf_ + pos_ - 1, kTrueBin)) {
       pos_ += 3;
-      return;
+      return sax.Bool(true);
     }
     setParseError(kParseErrorInvalidChar);
+    return false;
   }
 
-  template <typename SAX>
-  sonic_force_inline void parseStrInPlace(SAX &sax) {
+  sonic_force_inline StringView parseStringHelper() {
     uint8_t *src = json_buf_ + pos_;
     uint8_t *sdst = src;
     size_t n = internal::parseStringInplace(src, err_);
     pos_ = src - json_buf_;
-    if (!sax.String(StringView(reinterpret_cast<char *>(sdst), n))) {
-      setParseError(kParseErrorInvalidChar);
-      return;
-    }
-    return;
+    return StringView(reinterpret_cast<char *>(sdst), n);
+  }
+
+  template <typename SAX>
+  sonic_force_inline bool parseStrInPlace(SAX &sax) {
+    return sax.String(parseStringHelper());
+  }
+
+  template <typename SAX>
+  sonic_force_inline bool parseKeyInPlace(SAX &sax) {
+    return sax.Key(parseStringHelper());
   }
 
   sonic_force_inline bool carry_one(char c, uint64_t &sum) const {
@@ -189,13 +217,13 @@ class Parser {
   }
 
   template <typename SAX>
-  sonic_force_inline void parseNumber(SAX &sax) {
+  sonic_force_inline bool parseNumber(SAX &sax) {
 #define FLOATING_LONGEST_DIGITS 17
 #define RETURN_SET_ERROR_CODE(error_code) \
   {                                       \
     pos_ = i;                             \
     err_ = error_code;                    \
-    return;                               \
+    return true;                          \
   }
 #define CHECK_DIGIT()                              \
   if (sonic_unlikely(s[i] < '0' || s[i] > '9')) {  \
@@ -352,24 +380,27 @@ class Parser {
   double_fract : {
     int fract_len = FLOATING_LONGEST_DIGITS - man_nd;
     if (fract_len > 0) {
-      uint64_t sum = internal::simd_str2int_sse(s + i, fract_len);
-      const uint64_t pow10[17] = {1,
-                                  10,
-                                  100,
-                                  1000,
-                                  10000,
-                                  100000,
-                                  1000000,
-                                  10000000,
-                                  100000000,
-                                  1000000000,
-                                  10000000000,
-                                  100000000000,
-                                  1000000000000,
-                                  10000000000000,
-                                  100000000000000,
-                                  1000000000000000,
-                                  10000000000000000};
+      uint64_t sum = internal::simd_str2int(s + i, fract_len);
+      const uint64_t pow10[18] = {
+          1,
+          10,
+          100,
+          1000,
+          10000,
+          100000,
+          1000000,
+          10000000,
+          100000000,
+          1000000000,
+          10000000000,
+          100000000000,
+          1000000000000,
+          10000000000000,
+          100000000000000,
+          1000000000000000,
+          10000000000000000,
+          100000000000000000,
+      };
       man = man * pow10[fract_len] + sum;
       man_nd += fract_len;
       i += fract_len;
@@ -438,7 +469,7 @@ class Parser {
       RETURN_SET_ERROR_CODE(error_code);
     }
 
-    return;
+    return true;
 
 #undef CHECK_DIGIT
   }
@@ -461,6 +492,11 @@ class Parser {
         break;
       case '"':
         parseStrInPlace(sax);
+        // only need check length when parsing string primitives, because the
+        // padding "x\"x" makes parsing other invalid JSON always failed
+        if (pos_ > len_) {
+          setParseError(kParseErrorInvalidChar);
+        }
         break;
       case 'f':
         parseFalse(sax);
@@ -476,6 +512,13 @@ class Parser {
     }
   }
 
+  template <typename T, typename = int>
+  struct CheckKeyReturn : std::false_type {};
+
+  template <typename T>
+  struct CheckKeyReturn<T, decltype((void)T::check_key_return, 0)>
+      : std::true_type {};
+
   template <unsigned parseFlags, typename SAX>
   sonic_force_inline void parseImpl(SAX &sax) {
 #define sonic_check_err()   \
@@ -488,6 +531,7 @@ class Parser {
     std::vector<uint32_t> depth;
     const uint32_t kArrMask = 1ull << 31;
     const uint32_t kObjMask = 0;
+    bool found = true;
 
     uint8_t c = scan.SkipSpace(json_buf_, pos_);
     switch (c) {
@@ -518,11 +562,29 @@ class Parser {
 
   obj_key:
     if (sonic_unlikely(c != '"')) goto err_invalid_char;
-    parseStrInPlace(sax);
+    found = parseKeyInPlace(sax);
     sonic_check_err();
     c = scan.SkipSpace(json_buf_, pos_);
     if (sonic_unlikely(c != ':')) goto err_invalid_char;
 
+    if SONIC_IF_CONSTEXPR (CheckKeyReturn<SAX>::value) {
+      if (!found) {
+        if (!scan.SkipOne(json_buf_, pos_, len_)) {
+          goto err_invalid_char;
+        }
+        c = GetNextToken(json_buf_, pos_, len_, "\"}");
+        if (c == '"') {
+          pos_++;
+          goto obj_key;
+        }
+        if (c == '}') {
+          pos_++;
+          sax.EndObject(depth.back());
+          goto scope_end;
+        }
+        goto err_invalid_char;
+      }
+    }
     c = scan.SkipSpace(json_buf_, pos_);
     switch (c) {
       case '{': {

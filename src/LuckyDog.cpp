@@ -123,7 +123,6 @@ void LuckyDog::onClickCBtn2()
     }
 
     int l = realNameList.size();
-    
 
     random_device seed;
 	ranlux48 engine(seed());
@@ -189,9 +188,11 @@ void LuckyDog::onConfigStu()
             doc.AtPointer("nameList")->PopBack();
         }
     } else if (dc > 0) {
-        Node * n = doc.AtPointer("nameList", 0);
-        for (int i = 0; i < dc; i++) {
-            doc.AtPointer("nameList")->PushBack(*n, alloc);
+        Document node;
+        node.Parse("{\"id\":-1,\"name\":\"未命名\",\"w\":10}");
+        for (int i = 0; i < dc; i++) {    
+            auto *n = node.AtPointer();
+            doc.AtPointer("nameList")->PushBack(std::move(*n), alloc);
         }
     }
 

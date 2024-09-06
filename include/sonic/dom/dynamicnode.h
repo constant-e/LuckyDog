@@ -23,12 +23,11 @@
 #include "sonic/allocator.h"
 #include "sonic/dom/genericnode.h"
 #include "sonic/dom/handler.h"
+#include "sonic/dom/schema_handler.h"
 #include "sonic/dom/serialize.h"
 #include "sonic/dom/type.h"
 #include "sonic/error.h"
 #include "sonic/internal/ftoa.h"
-#include "sonic/internal/itoa.h"
-#include "sonic/internal/quote.h"
 #include "sonic/writebuffer.h"
 
 namespace sonic_json {
@@ -47,6 +46,7 @@ class DNode : public GenericNode<DNode<Allocator>> {
 
   friend class SAXHandler<DNode>;
   friend class LazySAXHandler<DNode>;
+  friend class SchemaHandler<DNode>;
 
   friend BaseNode;
   template <typename>
