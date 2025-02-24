@@ -18,7 +18,7 @@ file(GLOB_RECURSE HEADER_FILES src/*.hpp)
 file(GLOB_RECURSE SOURCE_FILES src/*.cpp)
 file(GLOB UI_FILES res/*.ui)
 
-include_directories(include src)
+include_directories(include src sonic-cpp/include)
 
 QT6_WRAP_UI(WRAP_FILES ${UI_FILES})
 add_executable(LuckyDog ${HEADER_FILES} ${SOURCE_FILES} ${WRAP_FILES} res/resource.qrc res/logo.rc)

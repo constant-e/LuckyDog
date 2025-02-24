@@ -1,0 +1,3 @@
+[submodule "sonic-cpp"]
+	path = sonic-cpp
+	url = git@github.com:bytedance/sonic-cpp.git
